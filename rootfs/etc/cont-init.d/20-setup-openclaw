@@ -82,8 +82,10 @@ fi
 persist_env_var OPENCLAW_ OPENCLAW_GATEWAY_TOKEN="$OPENCLAW_GATEWAY_TOKEN"
 echo "[generate-config] Gateway token configured (OPENCLAW_GATEWAY_TOKEN)"
 
-# Start with default config as base
-if [ -f "$DEFAULT_CONFIG" ]; then
+# Start with default config as base only when config is missing or invalid.
+if [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" >/dev/null 2>&1; then
+  echo "[generate-config] Existing config found; preserving user settings"
+elif [ -f "$DEFAULT_CONFIG" ]; then
   cp "$DEFAULT_CONFIG" "$CONFIG_FILE"
   echo "[generate-config] Using default config from $DEFAULT_CONFIG"
 else
@@ -96,17 +98,24 @@ fi
 if [ "${ENABLE_UI:-true}" = "false" ]; then
   echo "[generate-config] Disabling Control UI (ENABLE_UI=false)"
   jq '.gateway.controlUi.enabled = false' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  chown openclaw:openclaw "$CONFIG_FILE"
 fi
 
 # Add Tailscale config when enabled
 if [ "${TAILSCALE_ENABLE:-false}" = "true" ]; then
   echo "[generate-config] Adding Tailscale serve config"
   jq '.gateway.tailscale.resetOnExit = true | .gateway.tailscale.mode = "serve" | .gateway.auth.allowTailscale = true' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  chown openclaw:openclaw "$CONFIG_FILE"
 fi
 
 # Add gateway auth token to config
 echo "[generate-config] Adding gateway.auth.token to config"
 jq --arg token "$OPENCLAW_GATEWAY_TOKEN" '.gateway.auth.token = $token | .gateway.auth.mode = "token"' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+chown openclaw:openclaw "$CONFIG_FILE"
+
+# Ensure post-upgrade tools profile default is set if missing.
+jq '.tools.profile //= "coding"' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+chown openclaw:openclaw "$CONFIG_FILE"
 
 # Permissions applied via /etc/digitalocean/permissions.yaml
 
